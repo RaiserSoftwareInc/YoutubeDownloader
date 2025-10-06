@@ -1,118 +1,156 @@
 import os
-import tkinter as tk
-from tkinter import filedialog, messagebox
+import sys
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QCheckBox, QFileDialog, QMessageBox, QProgressBar
+)
+from PySide6.QtCore import Qt, QThread, Signal
 from pytubefix import YouTube  # ✅ updated import
 
-# Function to handle download button click event
-def download_video():
-    try:
-        youtube_link = link_entry.get().strip()
-        folder_path = folder_entry.get().strip()
+class DownloadWorker(QThread):
+    progress = Signal(int)
+    status = Signal(str)
+    done = Signal()
+
+    def __init__(self, youtube_link, folder_path, mp3_choice, mp4_choice):
+        super().__init__()
+        self.youtube_link = youtube_link
+        self.folder_path = folder_path
+        self.mp3_choice = mp3_choice
+        self.mp4_choice = mp4_choice
+
+    def run(self):
+        try:
+            yt = YouTube(self.youtube_link, on_progress_callback=self.on_progress)
+            self.status.emit("Fetching video info...")
+
+            if self.mp4_choice:
+                os.makedirs(os.path.join(self.folder_path, "video"), exist_ok=True)
+                stream = yt.streams.get_highest_resolution()
+                self.status.emit("Downloading video...")
+                stream.download(output_path=os.path.join(self.folder_path, "video"))
+
+            if self.mp3_choice:
+                os.makedirs(os.path.join(self.folder_path, "audio"), exist_ok=True)
+                stream = yt.streams.get_audio_only()
+                self.status.emit("Downloading audio...")
+                file = stream.download(output_path=os.path.join(self.folder_path, "audio"))
+                base, _ = os.path.splitext(file)
+                new_file = base + ".mp3"
+                os.rename(file, new_file)
+
+            self.status.emit("Download complete ✅")
+            self.done.emit()
+
+        except Exception as e:
+            self.status.emit(f"Error: {e}")
+            self.done.emit()
+
+    def on_progress(self, stream, chunk, bytes_remaining):
+        total = stream.filesize
+        percent = int((total - bytes_remaining) / total * 100)
+        self.progress.emit(percent)
+
+class YouTubeDownloader(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("YouTube Downloader (Qt Edition)")
+        self.setMinimumSize(420, 250)
+        self.init_ui()
+        self.worker = None
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        # --- YouTube Link ---
+        link_layout = QHBoxLayout()
+        link_label = QLabel("YouTube Link:")
+        self.link_entry = QLineEdit()
+        link_layout.addWidget(link_label)
+        link_layout.addWidget(self.link_entry)
+        layout.addLayout(link_layout)
+
+        # --- Folder Selection ---
+        folder_layout = QHBoxLayout()
+        folder_label = QLabel("Save to:")
+        self.folder_entry = QLineEdit()
+        browse_button = QPushButton("Browse")
+        browse_button.clicked.connect(self.browse_folder)
+        folder_layout.addWidget(folder_label)
+        folder_layout.addWidget(self.folder_entry)
+        folder_layout.addWidget(browse_button)
+        layout.addLayout(folder_layout)
+
+        # --- Format Selection ---
+        format_layout = QHBoxLayout()
+        self.mp3_checkbox = QCheckBox("MP3")
+        self.mp4_checkbox = QCheckBox("MP4")
+        format_layout.addWidget(self.mp3_checkbox)
+        format_layout.addWidget(self.mp4_checkbox)
+        layout.addLayout(format_layout)
+
+        # --- Progress Bar ---
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+
+        # --- Download Button ---
+        self.download_button = QPushButton("Download")
+        self.download_button.clicked.connect(self.download_video)
+        layout.addWidget(self.download_button)
+
+        # --- Status Label ---
+        self.status_label = QLabel("")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.status_label)
+
+        self.setLayout(layout)
+
+    def browse_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Folder")
+        if folder:
+            self.folder_entry.setText(folder)
+
+    def update_status(self, message: str):
+        self.status_label.setText(message)
+    
+    def update_progress(self, value: int):
+        self.progress_bar.setValue(value)
+
+    # Function to handle download button click event
+    def download_video(self):
+        youtube_link = self.link_entry.text().strip()
+        folder_path = self.folder_entry.text().strip()
+        mp3_choice = self.mp3_checkbox.isChecked()
+        mp4_choice = self.mp4_checkbox.isChecked()
 
         if not youtube_link:
-            update_status("Please enter a YouTube link")
+            self.update_status("Please enter a YouTube link")
             return
         if not folder_path:
-            update_status("Please choose a folder")
+            self.update_status("Please choose a folder")
             return
-
-        mp3_choice = mp3_var.get()
-        mp4_choice = mp4_var.get()
-
         if not mp3_choice and not mp4_choice:
-            update_status("Select MP3 or MP4")
+            self.update_status("Select MP3 or MP4")
             return
 
-        youtube = YouTube(youtube_link)
+        # Disable button during download
+        self.download_button.setEnabled(False)
+        self.progress_bar.setValue(0)
+        self.update_status("Starting download...")
 
-        audio_folder = os.path.join(folder_path, "audio")
-        video_folder = os.path.join(folder_path, "video")
+        self.worker = DownloadWorker(youtube_link, folder_path, mp3_choice, mp4_choice)
+        self.worker.progress.connect(self.update_progress)
+        self.worker.status.connect(self.update_status)
+        self.worker.done.connect(self.on_download_complete)
+        self.worker.start()
+            
+    def on_download_complete(self):
+        self.download_button.setEnabled(True)
 
-        if mp4_choice:
-            os.makedirs(video_folder, exist_ok=True)
-            stream = youtube.streams.get_highest_resolution()
-            stream.download(output_path=video_folder)
-
-        if mp3_choice:
-            os.makedirs(audio_folder, exist_ok=True)
-            stream = youtube.streams.get_audio_only()
-            downloaded_file = stream.download(output_path=audio_folder)
-
-            # Change extension to .mp3 (note: file is still AAC/WEBM unless converted)
-            base, ext = os.path.splitext(downloaded_file)
-            new_file = base + ".mp3"
-            os.rename(downloaded_file, new_file)
-
-        update_status("Download completed")
-
-    except Exception as e:
-        update_status(f"Error: {e}")
-
-# Function to handle the context menu
-def show_context_menu(event):
-    context_menu.tk_popup(event.x_root, event.y_root)
-
-# Function to handle paste button click event
-def paste_from_clipboard():
-    try:
-        clipboard_text = window.clipboard_get()
-        link_entry.delete(0, tk.END)
-        link_entry.insert(tk.END, clipboard_text)
-    except:
-        pass
-
-# Function to handle browse button click event
-def browse_folder():
-    folder_path = filedialog.askdirectory()
-    if folder_path:
-        folder_entry.delete(0, tk.END)
-        folder_entry.insert(0, folder_path)
-
-# Create a new window
-window = tk.Tk()
-window.title("YouTube Downloader")
-window.geometry("350x180")
-
-# YouTube link
-link_label = tk.Label(window, text="YouTube Link:")
-link_label.grid(row=0, column=0, sticky="w")
-link_entry = tk.Entry(window, width=30)
-link_entry.grid(row=0, column=1, padx=5, pady=5)
-
-# Folder path
-folder_label = tk.Label(window, text="Folder Path:")
-folder_label.grid(row=1, column=0, sticky="w")
-folder_entry = tk.Entry(window, width=30)
-folder_entry.grid(row=1, column=1, padx=5, pady=5)
-browse_button = tk.Button(window, text="Browse", command=browse_folder)
-browse_button.grid(row=1, column=2, padx=5, pady=5)
-
-# Checkboxes
-mp3_var = tk.IntVar()
-mp3_checkbox = tk.Checkbutton(window, text="MP3", variable=mp3_var)
-mp3_checkbox.grid(row=2, column=0)
-mp4_var = tk.IntVar()
-mp4_checkbox = tk.Checkbutton(window, text="MP4", variable=mp4_var)
-mp4_checkbox.grid(row=2, column=1)
-
-# Context menu
-context_menu = tk.Menu(window, tearoff=0)
-context_menu.add_command(label="Cut", command=lambda: link_entry.event_generate("<<Cut>>"))
-context_menu.add_command(label="Copy", command=lambda: link_entry.event_generate("<<Copy>>"))
-context_menu.add_separator()
-context_menu.add_command(label="Paste", command=paste_from_clipboard)
-window.bind("<Button-3>", show_context_menu)
-
-# Download button
-download_button = tk.Button(window, text="Download", command=download_video)
-download_button.grid(row=3, column=0, columnspan=3, padx=5, pady=5)
-
-# Status label
-status_label = tk.Label(window, text="", fg="blue")
-status_label.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
-
-def update_status(message):
-    status_label.config(text=message)
-
-# Run loop
-window.mainloop()
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = YouTubeDownloader()
+    window.show()
+    sys.exit(app.exec())
