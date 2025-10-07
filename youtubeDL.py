@@ -184,6 +184,55 @@ class DownloadPage(QWidget):
         self.progress_bar.setValue(100)
         QMessageBox.information(self, "Download Complete", "Your download has finished successfully!")
 
+class SettingsPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.settings = QSettings("test", "YoutubeDownloaderApp")
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        # Default download folder
+        folder_layout = QHBoxLayout()
+        folder_label = QLabel("Default Download Folder:")
+        self.folder_entry = QLineEdit()
+        self.folder_entry.setText(self.settings.value("last_folder", ""))
+        browse_button = QPushButton("Browse")
+        browse_button.clicked.connect(self.browse_folder)
+        folder_layout.addWidget(folder_label)
+        folder_layout.addWidget(self.folder_entry)
+        folder_layout.addWidget(browse_button)
+        layout.addLayout(folder_layout)
+
+        # Dark theme toggle
+        self.dark_theme_checkbox = QCheckBox("Enable Dark Theme")
+        self.dark_theme_checkbox.setChecked(
+            self.settings.value("dark_theme", False, type=bool)
+        )
+        layout.addWidget(self.dark_theme_checkbox)
+
+        # Save button
+        save_button = QPushButton("Save Settings")
+        save_button.clicked.connect(self.save_settings)
+        layout.addWidget(save_button)
+        layout.addStretch()
+
+        self.setLayout(layout)
+
+    def browse_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Folder")
+        if folder:
+            self.folder_entry.setText(folder)
+
+    def save_settings(self):
+        self.settings.setValue("last_folder", self.folder_entry.text())
+        self.settings.setValue("dark_theme", self.dark_theme_checkbox.isChecked())
+        QMessageBox.information(
+            self, "Settings Saved", "Your settings have been saved successfully!"
+        )
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -209,7 +258,7 @@ class MainWindow(QMainWindow):
         # --- Pages ---
         self.stack = QStackedLayout()
         self.download_page = DownloadPage()
-        self.settings_page = QWidget()  # placeholder
+        self.settings_page = SettingsPage()
         self.history_page = QWidget()   # placeholder
         self.stack.addWidget(self.download_page)
         self.stack.addWidget(self.settings_page)
