@@ -4,7 +4,8 @@ import subprocess
 import platform
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QCheckBox, QFileDialog, QMessageBox, QProgressBar
+    QPushButton, QCheckBox, QFileDialog, QMessageBox, QProgressBar, 
+    QMainWindow, QStackedLayout
 )
 from PySide6.QtCore import Qt, QThread, Signal, QSettings
 from pytubefix import YouTube  # ✅ updated import
@@ -53,11 +54,9 @@ class DownloadWorker(QThread):
         percent = int((total - bytes_remaining) / total * 100)
         self.progress.emit(percent)
 
-class YouTubeDownloader(QWidget):
+class DownloadPage(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("YouTube Downloader (Qt Edition)")
-        self.setMinimumSize(420, 250)
         self.init_ui()
         
         self.settings = QSettings("test", "YoutubeDownloaderApp")
@@ -185,8 +184,47 @@ class YouTubeDownloader(QWidget):
         self.progress_bar.setValue(100)
         QMessageBox.information(self, "Download Complete", "Your download has finished successfully!")
 
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("YouTube Downloader App")
+        self.setMinimumSize(1080, 720)
+        self.init_ui()
+
+    def init_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QHBoxLayout(central)
+
+        # --- Sidebar ---
+        sidebar = QVBoxLayout()
+        self.download_btn = QPushButton("Download")
+        self.settings_btn = QPushButton("Settings")
+        self.history_btn = QPushButton("History")
+        sidebar.addWidget(self.download_btn)
+        sidebar.addWidget(self.settings_btn)
+        sidebar.addWidget(self.history_btn)
+        sidebar.addStretch()
+
+        # --- Pages ---
+        self.stack = QStackedLayout()
+        self.download_page = DownloadPage()
+        self.settings_page = QWidget()  # placeholder
+        self.history_page = QWidget()   # placeholder
+        self.stack.addWidget(self.download_page)
+        self.stack.addWidget(self.settings_page)
+        self.stack.addWidget(self.history_page)
+
+        main_layout.addLayout(sidebar)
+        main_layout.addLayout(self.stack)
+
+        # --- Connect sidebar ---
+        self.download_btn.clicked.connect(lambda: self.stack.setCurrentWidget(self.download_page))
+        self.settings_btn.clicked.connect(lambda: self.stack.setCurrentWidget(self.settings_page))
+        self.history_btn.clicked.connect(lambda: self.stack.setCurrentWidget(self.history_page))
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = YouTubeDownloader()
+    window = MainWindow()
     window.show()
     sys.exit(app.exec())
