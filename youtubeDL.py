@@ -114,6 +114,10 @@ class YouTubeDownloader(QWidget):
 
     def update_status(self, message: str):
         self.status_label.setText(message)
+
+        # Show popup for errors
+        if message.lower().startswith("error"):
+            QMessageBox.warning(self, "Error", message)
     
     def update_progress(self, value: int):
         self.progress_bar.setValue(value)
@@ -126,13 +130,13 @@ class YouTubeDownloader(QWidget):
         mp4_choice = self.mp4_checkbox.isChecked()
 
         if not youtube_link:
-            self.update_status("Please enter a YouTube link")
+            QMessageBox.warning(self, "Missing Link", "Please enter a YouTube link.")
             return
         if not folder_path:
-            self.update_status("Please choose a folder")
+            QMessageBox.warning(self, "Missing Folder", "Please choose a folder.")
             return
         if not mp3_choice and not mp4_choice:
-            self.update_status("Select MP3 or MP4")
+            QMessageBox.warning(self, "Format Required", "Select at least one format (MP3 or MP4).")
             return
 
         # Disable button during download
@@ -148,6 +152,8 @@ class YouTubeDownloader(QWidget):
             
     def on_download_complete(self):
         self.download_button.setEnabled(True)
+        self.progress_bar.setValue(100)
+        QMessageBox.information(self, "Download Complete", "Your download has finished successfully!")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
