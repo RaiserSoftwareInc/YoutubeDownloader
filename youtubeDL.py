@@ -51,12 +51,15 @@ class DownloadWorker(QThread):
 
     def on_progress(self, stream, chunk, bytes_remaining):
         total = stream.filesize
-        percent = int((total - bytes_remaining) / total * 100)
-        self.progress.emit(percent)
+        if total:
+            percent = int((total - bytes_remaining) / total * 100)
+            self.progress.emit(percent)
+
 
 class DownloadPage(QWidget):
-    def __init__(self):
+    def __init__(self, history_page=None):
         super().__init__()
+        self.history_page = history_page
         self.init_ui()
         
         self.settings = QSettings("test", "YoutubeDownloaderApp")
@@ -179,9 +182,15 @@ class DownloadPage(QWidget):
         self.worker.start()
             
     def on_download_complete(self):
-        self.settings.setValue("last_folder", folder_path)
+        self.settings.setValue("last_folder", self.folder_entry.text().strip())
         self.download_button.setEnabled(True)
         self.progress_bar.setValue(100)
+
+        # --- Add to history ---
+        entry = f"{self.link_entry.text().strip()} -> {self.folder_entry.text().strip()}"
+        if self.history_page:
+            self.history_page.add_history(entry)
+
         QMessageBox.information(self, "Download Complete", "Your download has finished successfully!")
 
 class SettingsPage(QWidget):
@@ -232,6 +241,48 @@ class SettingsPage(QWidget):
             self, "Settings Saved", "Your settings have been saved successfully!"
         )
 
+class HistoryPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.settings = QSettings("test", "YoutubeDownloaderApp")
+        self.init_ui()
+        self.load_history()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        self.history_label = QLabel("No downloads yet.")
+        self.history_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.history_label)
+
+        clear_button = QPushButton("Clear History")
+        clear_button.clicked.connect(self.clear_history)
+        layout.addWidget(clear_button)
+
+        layout.addStretch()
+        self.setLayout(layout)
+
+    def load_history(self):
+        # Load saved history
+        history = self.settings.value("download_history", [])
+        if isinstance(history, str):
+            history = [history]
+        if not history:
+            self.history_label.setText("No downloads yet.")
+        else:
+            self.history_label.setText("\n".join(history))
+
+    def add_history(self, entry: str):
+        history = self.settings.value("download_history", [])
+        if not history:
+            history = []
+        history.append(entry)
+        self.settings.setValue("download_history", history)
+        self.load_history()
+
+    def clear_history(self):
+        self.settings.remove("download_history")
+        self.load_history()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -256,10 +307,10 @@ class MainWindow(QMainWindow):
         sidebar.addStretch()
 
         # --- Pages ---
-        self.stack = QStackedLayout()
-        self.download_page = DownloadPage()
+        self.history_page = HistoryPage()
+        self.download_page = DownloadPage(history_page=self.history_page)
         self.settings_page = SettingsPage()
-        self.history_page = QWidget()   # placeholder
+        self.stack = QStackedLayout()
         self.stack.addWidget(self.download_page)
         self.stack.addWidget(self.settings_page)
         self.stack.addWidget(self.history_page)
