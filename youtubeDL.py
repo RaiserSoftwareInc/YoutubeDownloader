@@ -1,10 +1,12 @@
 import os
 import sys
+import subprocess
+import platform
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QCheckBox, QFileDialog, QMessageBox, QProgressBar
 )
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QSettings
 from pytubefix import YouTube  # ✅ updated import
 
 class DownloadWorker(QThread):
@@ -57,6 +59,13 @@ class YouTubeDownloader(QWidget):
         self.setWindowTitle("YouTube Downloader (Qt Edition)")
         self.setMinimumSize(420, 250)
         self.init_ui()
+        
+        self.settings = QSettings("test", "YoutubeDownloaderApp")
+        # Load last saved folder path
+        last_folder = self.settings.value("last_folder", "")
+        if last_folder:
+            self.folder_entry.setText(last_folder)
+
         self.worker = None
 
     def init_ui(self):
@@ -100,6 +109,11 @@ class YouTubeDownloader(QWidget):
         self.download_button.clicked.connect(self.download_video)
         layout.addWidget(self.download_button)
 
+        # --- Open Folder Button ---
+        open_button = QPushButton("Open Folder")
+        open_button.clicked.connect(self.open_folder)
+        layout.addWidget(open_button)
+
         # --- Status Label ---
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -111,6 +125,21 @@ class YouTubeDownloader(QWidget):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder")
         if folder:
             self.folder_entry.setText(folder)
+            self.settings.setValue("last_folder", folder)
+
+    def open_folder(self):
+        folder_path = self.folder_entry.text().strip()
+        if not folder_path or not os.path.exists(folder_path):
+            QMessageBox.warning(self, "Folder Not Found", "Please select a valid folder first.")
+            return
+
+        if platform.system() == "Windows":
+            os.startfile(folder_path)
+        elif platform.system() == "Darwin":  # macOS
+            subprocess.run(["open", folder_path])
+        else:  # Linux
+            subprocess.run(["xdg-open", folder_path])
+
 
     def update_status(self, message: str):
         self.status_label.setText(message)
@@ -151,6 +180,7 @@ class YouTubeDownloader(QWidget):
         self.worker.start()
             
     def on_download_complete(self):
+        self.settings.setValue("last_folder", folder_path)
         self.download_button.setEnabled(True)
         self.progress_bar.setValue(100)
         QMessageBox.information(self, "Download Complete", "Your download has finished successfully!")
